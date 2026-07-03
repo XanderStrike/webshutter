@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WebShutter — Canon EOS shutter counter via WebUSB</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main>
+    <header>
+      <h1>WebShutter</h1>
+      <p class="tag">Read the shutter count of a Canon EOS DSLR straight from the browser, over USB.</p>
+    </header>
+
+    <section class="card controls">
+      <button id="connect" class="primary">Connect camera</button>
+      <span id="status" class="status">Idle.</span>
+    </section>
+
+    <section id="result" class="card result hidden">
+      <div class="result-row">
+        <span class="label">Camera model</span>
+        <span id="model" class="value">—</span>
+      </div>
+      <div class="result-row">
+        <span class="label">Serial number</span>
+        <span id="serial" class="value">—</span>
+      </div>
+      <div class="result-row big">
+        <span class="label">Shutter count</span>
+        <span id="shutter" class="value">—</span>
+      </div>
+    </section>
+
+    <section class="card notes">
+      <h2>Notes</h2>
+      <ul>
+        <li>Requires a Chromium-based browser (Chrome / Edge / Opera) — WebUSB is not supported in Firefox or Safari.</li>
+        <li>Camera must be in <strong>PTP</strong> communication mode.</li>
+        <li>Supported bodies are the same as the libgphoto2 <code>shuttercounter</code> property: 1D C, 1D X, 1D Mk IV, 7D/II, 5D II/III, 6D, 40D–70D, and the xxxD line. Newer bodies (5D IV, 5DS, 80D, 750D/760D, 1300D) don't expose it.</li>
+        <li>Read-only. This only queries <code>DPC_CANON_EOS_ShutterCounter (0xD1ac)</code>; it changes nothing on the camera.</li>
+      </ul>
+    </section>
+
+    <section class="card log-card">
+      <h2>Protocol log</h2>
+      <pre id="log" class="log"></pre>
+    </section>
+
+    <section class="card caveat">
+      <h2>⚠️ macOS &amp; the PTPCamera problem</h2>
+      <p>
+        On macOS, when you plug in the camera, the system's
+        <code>PTPCamera</code> helper (used by Image Capture / Photos) grabs the
+        USB interface. A browser cannot take it away from another process, so
+        <strong>WebUSB will fail to claim the interface</strong> until
+        <code>PTPCamera</code> lets go.
+      </p>
+      <p>This tool does <em>not</em> try to solve that automatically. Workarounds:</p>
+      <ul>
+        <li>Quit Image Capture / Photos, then unplug &amp; replug the camera, <em>then</em> click Connect.</li>
+        <li>Or disable the auto-grab once (reversible):
+          <pre><code>defaults -currentHost write com.apple.ImageCapture disableHotPlug -bool true</code></pre>
+        </li>
+      </ul>
+    </section>
+
+    <footer>
+      <p>Re-implements the libgphoto2 <code>ptp2</code> “shuttercounter” read using WebUSB. No affiliation with Canon.</p>
+    </footer>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
