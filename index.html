@@ -10,7 +10,7 @@
   <main>
     <header>
       <h1>WebShutter</h1>
-      <p class="tag">Read the shutter count of a Canon EOS DSLR straight from the browser, over USB.</p>
+      <p class="tag">Read the shutter count and other camera info from a Canon EOS DSLR, straight from the browser over USB.</p>
     </header>
 
     <section class="card controls">
@@ -19,18 +19,11 @@
     </section>
 
     <section id="result" class="card result hidden">
-      <div class="result-row">
-        <span class="label">Camera model</span>
-        <span id="model" class="value">—</span>
-      </div>
-      <div class="result-row">
-        <span class="label">Serial number</span>
-        <span id="serial" class="value">—</span>
-      </div>
       <div class="result-row big">
         <span class="label">Shutter count</span>
         <span id="shutter" class="value">—</span>
       </div>
+      <div id="extra" class="grid"></div>
     </section>
 
     <section class="card notes">
@@ -39,7 +32,7 @@
         <li>Requires a Chromium-based browser (Chrome / Edge / Opera) — WebUSB is not supported in Firefox or Safari.</li>
         <li>Camera must be in <strong>PTP</strong> communication mode.</li>
         <li>Supported bodies are the same as the libgphoto2 <code>shuttercounter</code> property: 1D C, 1D X, 1D Mk IV, 7D/II, 5D II/III, 6D, 40D–70D, and the xxxD line. Newer bodies (5D IV, 5DS, 80D, 750D/760D, 1300D) don't expose it.</li>
-        <li>Read-only. This only queries <code>DPC_CANON_EOS_ShutterCounter (0xD1ac)</code>; it changes nothing on the camera.</li>
+        <li>Read-only. This only queries device properties (shutter count, identity, lens, battery, etc.); it changes nothing on the camera.</li>
       </ul>
     </section>
 

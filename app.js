@@ -32,8 +32,52 @@ const OP_EOS_RequestDevicePropValue = 0x9127;
 // Canon EOS event codes (delivered in the 0x9116 GetEvent data blob)
 const EC_EOS_PropValueChanged = 0xc189;
 
-// Canon EOS device property codes
-const DPC_EOS_ShutterCounter = 0xD1ac;
+// Canon EOS device property codes we care about.
+const DPC_EOS_Owner               = 0xD115;
+const DPC_EOS_ModelID             = 0xD116;
+const DPC_EOS_CameraTime          = 0xD113;
+const DPC_EOS_PTPExtensionVersion = 0xD119;
+const DPC_EOS_AvailableShots      = 0xD11B;
+const DPC_EOS_BatteryPower        = 0xD111;
+const DPC_EOS_Nickname            = 0xD125;
+const DPC_EOS_TempStatus          = 0xD1ab;
+const DPC_EOS_ExtenderType        = 0xD198;
+const DPC_EOS_LensStatus          = 0xD1a8;
+const DPC_EOS_BatteryInfo         = 0xD1a6; // structured blob — not decoded
+const DPC_EOS_ShutterCounter      = 0xD1ac;
+const DPC_EOS_SerialNumber        = 0xD1af;
+const DPC_EOS_LensName            = 0xD1d8;
+const DPC_EOS_LensID              = 0xD1dd;
+const DPC_EOS_Artist              = 0xD1d0;
+const DPC_EOS_Copyright           = 0xD1d1;
+
+// Metadata for every property we display. type is how the bytes are encoded
+// in the PropValueChanged event (per ptp-pack.c's DataType switch).
+// fmt/decode turn the raw number into something human-readable.
+const BATTERY_LEVEL = { 0: "Low", 1: "50%", 2: "100%", 4: "75%", 5: "25%" };
+const PROPS = {
+  [DPC_EOS_Owner]:               { name: "Owner",            type: "str" },
+  [DPC_EOS_Artist]:              { name: "Artist",           type: "str" },
+  [DPC_EOS_Copyright]:           { name: "Copyright",        type: "str" },
+  [DPC_EOS_Nickname]:            { name: "Nickname",         type: "str" },
+  [DPC_EOS_SerialNumber]:        { name: "Serial number",    type: "str" },
+  [DPC_EOS_LensName]:            { name: "Lens",             type: "str" },
+  [DPC_EOS_ShutterCounter]:      { name: "Shutter count",    type: "u32" },
+  [DPC_EOS_AvailableShots]:      { name: "Available shots",  type: "u32" },
+  [DPC_EOS_BatteryPower]:        { name: "Battery",          type: "u16", decode: (v) => BATTERY_LEVEL[v] ?? `level ${v}` },
+  [DPC_EOS_ModelID]:             { name: "Model ID",         type: "u32", decode: (v) => MODEL_ID_NAMES[v] ? `${MODEL_ID_NAMES[v]} (${hex(v, 8)})` : hex(v, 8) },
+  [DPC_EOS_LensStatus]:          { name: "Lens status",      type: "u32" },
+  [DPC_EOS_TempStatus]:          { name: "Temperature",      type: "u32" },
+  [DPC_EOS_CameraTime]:          { name: "Camera time",      type: "u32", decode: (v) => v ? new Date(v * 1000).toLocaleString() : "—" },
+};
+
+// Properties libgphoto2 explicitly requests via RequestDevicePropValue
+// after EOS init (config.c:405-408) — strings that aren't pushed in the
+// initial event dump. We add LensName/Nickname too since they're strings.
+const REQUEST_PROPS = [
+  DPC_EOS_Owner, DPC_EOS_Artist, DPC_EOS_Copyright,
+  DPC_EOS_SerialNumber, DPC_EOS_LensName, DPC_EOS_Nickname,
+];
 
 // --- tiny helpers --------------------------------------------------------
 function u16le(b, o) { return b[o] | (b[o + 1] << 8); }
@@ -51,7 +95,7 @@ function hex(n, w = 4) { return "0x" + n.toString(16).toUpperCase().padStart(w, 
 // --- UI plumbing ---------------------------------------------------------
 const $ = (id) => document.getElementById(id);
 const elStatus = $("status"), elLog = $("log");
-const elResult = $("result"), elModel = $("model"), elSerial = $("serial"), elShutter = $("shutter");
+const elResult = $("result"), elShutter = $("shutter"), elExtra = $("extra");
 
 function setStatus(text, cls = "") {
   elStatus.textContent = text;
@@ -64,10 +108,21 @@ function logLine(text, cls = "") {
   elLog.appendChild(span);
   elLog.scrollTop = elLog.scrollHeight;
 }
-function showResult(model, serial, shutter) {
-  elModel.textContent = model ?? "—";
-  elSerial.textContent = serial ?? "—";
+function addRow(label, value) {
+  const row = document.createElement("div");
+  row.className = "cell";
+  const lab = document.createElement("span"); lab.className = "label"; lab.textContent = label;
+  const val = document.createElement("span"); val.className = "value"; val.textContent = value ?? "—";
+  row.append(lab, val);
+  elExtra.appendChild(row);
+}
+function showResult(model, serial, shutter, extra) {
   elShutter.textContent = shutter != null ? shutter.toLocaleString() : "—";
+  elExtra.replaceChildren();
+  addRow("Camera model", model);
+  addRow("Serial number", serial);
+  // extra is an array of {label, value} in display order
+  for (const v of extra) addRow(v.label, v.value);
   elResult.classList.remove("hidden");
 }
 const ptpErrName = (c) => "0x" + c.toString(16);
@@ -188,6 +243,72 @@ function readPTPString(dv, u8, offsetRef) {
   return String.fromCharCode(...codes);
 }
 
+// EOS string property values are PLAIN null-terminated ASCII/UTF-8 — not the
+// length-prefixed UTF-16LE used by standard PTP DeviceInfo strings.
+// (ptp-pack.c PropValueChanged STR case: `strdup((char*)xdata)`, with the
+// comment "5D MII and 400D actually store plain ASCII in their string props".)
+function decodeEosString(bytes) {
+  if (!bytes || bytes.length === 0) return "";
+  let end = bytes.length;
+  for (let i = 0; i < bytes.length; i++) { if (bytes[i] === 0) { end = i; break; } }
+  return new TextDecoder("utf-8").decode(bytes.subarray(0, end));
+}
+
+// Canon EOS ModelID -> name (ExifTool CanonModelID table; the PTP
+// DPC_CANON_EOS_ModelID uses the same encoding, e.g. 0x80000250 = EOS 7D).
+const MODEL_ID_NAMES = {
+  0x80000001: "EOS-1D",
+  0x80000167: "EOS-1Ds",
+  0x80000168: "EOS 10D",
+  0x80000169: "EOS-1D Mark III",
+  0x80000170: "EOS 300D / Rebel / Kiss Digital",
+  0x80000174: "EOS-1D Mark II",
+  0x80000175: "EOS 20D",
+  0x80000176: "EOS 450D / Rebel XSi / Kiss X2",
+  0x80000188: "EOS-1Ds Mark II",
+  0x80000189: "EOS 350D / Rebel XT / Kiss Digital N",
+  0x80000190: "EOS 40D",
+  0x80000213: "EOS 5D",
+  0x80000215: "EOS-1Ds Mark III",
+  0x80000218: "EOS 5D Mark II",
+  0x80000232: "EOS-1D Mark II N",
+  0x80000234: "EOS 30D",
+  0x80000236: "EOS 400D / Rebel XTi / Kiss Digital X",
+  0x80000250: "EOS 7D",
+  0x80000252: "EOS 500D / Rebel T1i / Kiss X3",
+  0x80000254: "EOS 1000D / Rebel XS / Kiss F",
+  0x80000261: "EOS 50D",
+  0x80000269: "EOS-1D X",
+  0x80000270: "EOS 550D / Rebel T2i / Kiss X4",
+  0x80000281: "EOS-1D Mark IV",
+  0x80000285: "EOS 5D Mark III",
+  0x80000286: "EOS 600D / Rebel T3i / Kiss X5",
+  0x80000287: "EOS 60D",
+  0x80000288: "EOS 1100D / Rebel T3 / Kiss X50",
+  0x80000289: "EOS 7D Mark II",
+  0x80000301: "EOS 650D / Rebel T4i / Kiss X6i",
+  0x80000302: "EOS 6D",
+  0x80000324: "EOS-1D C",
+  0x80000325: "EOS 70D",
+  0x80000326: "EOS 700D / Rebel T5i / Kiss X7i",
+  0x80000327: "EOS 1200D / Rebel T5 / Kiss X70",
+  0x80000346: "EOS 100D / Rebel SL1 / Kiss X7",
+  0x80000350: "EOS 80D",
+};
+
+// Decode a PropValueChanged value payload given property metadata.
+function decodeProp(meta, valueBytes) {
+  let raw;
+  switch (meta.type) {
+    case "str":  return decodeEosString(valueBytes);
+    case "u16":  raw = u16le(valueBytes, 0); break;
+    case "u32":  raw = u32le(valueBytes, 0); break;
+    default: return hex(valueBytes[0]);
+  }
+  if (meta.decode) return meta.decode(raw);
+  return raw.toLocaleString();
+}
+
 // u32 count + count * u16 LE
 function readU16Array(dv, u8, offsetRef) {
   const count = dv.getUint32(offsetRef.o, true); offsetRef.o += 4;
@@ -246,9 +367,9 @@ function parseEosEvents(blob) {
   return out;
 }
 
-// --- the actual shutter-count flow --------------------------------------
+// --- the camera-info flow ----------------------------------------------
 
-async function getShutterCount() {
+async function getCameraInfo() {
   const dev = state.device;
 
   // 1. Standard GetDeviceInfo (works without a session; gives Model/Serial).
@@ -292,14 +413,17 @@ async function getShutterCount() {
     const em = await ptpTransaction(OP_EOS_SetEventMode, [1], false);
     if (!em.ok) logLine(`  SetEventMode returned ${ptpErrName(em.code)} (continuing)`, "l-warn");
 
-    // 4. Best-effort: explicitly ask the camera for the shutter-counter value.
-    //    (libgphoto2 only does this for Owner/Artist/Copyright/Serial, but the
-    //    opcode is generic. If it errors, we still fall through to polling.)
-    logLine(`→ EOS RequestDevicePropValue(${hex(DPC_EOS_ShutterCounter)}) ${hex(OP_EOS_RequestDevicePropValue)}`, "l-dim");
-    const req = await ptpTransaction(OP_EOS_RequestDevicePropValue, [DPC_EOS_ShutterCounter], false);
-    if (!req.ok) logLine(`  RequestDevicePropValue returned ${ptpErrName(req.code)} (continuing)`, "l-warn");
+    // 4. Best-effort: explicitly request the string props that aren't pushed
+    //    in the initial event dump (mirrors libgphoto2 config.c:405-408,
+    //    plus LensName/Nickname).
+    for (const dpc of REQUEST_PROPS) {
+      const r = await ptpTransaction(OP_EOS_RequestDevicePropValue, [dpc], false);
+      logLine(`→ RequestDevicePropValue(${hex(dpc)}) → ${r.ok ? "ok" : ptpErrName(r.code)}`, r.ok ? "l-dim" : "l-warn");
+    }
 
-    // 5. Poll GetEvent until we see a PropValueChanged for 0xD1ac, or give up.
+    // 5. Poll GetEvent, collecting every property we know how to decode.
+    //    Stop once we've seen the shutter count, or after MAX_POLLS.
+    const collected = new Map(); // dpc -> decoded value
     let shutter = null;
     const MAX_POLLS = 15;
     for (let i = 0; i < MAX_POLLS; i++) {
@@ -311,16 +435,37 @@ async function getShutterCount() {
       const events = parseEosEvents(ev.data);
       logLine(`  ${events.length} event(s)`, "l-dim");
       for (const e of events) {
-        if (e.code === EC_EOS_PropValueChanged && e.dpc === DPC_EOS_ShutterCounter) {
-          // UINT32 little-endian
-          shutter = u32le(e.valueBytes, 0);
-          logLine(`  ✓ ShutterCounter = ${shutter}`, "l-ok");
-        }
+        if (e.code !== EC_EOS_PropValueChanged) continue;
+        const meta = PROPS[e.dpc];
+        if (!meta) continue;
+        const decoded = decodeProp(meta, e.valueBytes);
+        collected.set(e.dpc, decoded);
+        logLine(`  ✓ ${meta.name} (${hex(e.dpc)}) = ${decoded || "(empty)"}`, "l-ok");
+        if (e.dpc === DPC_EOS_ShutterCounter) shutter = decoded;
       }
       if (shutter != null) break;
     }
 
-    return { model: info.model, serial: info.serialNumber, shutter };
+    // 6. Build an ordered extras list (identity first, then diagnostics).
+    const serial = collected.get(DPC_EOS_SerialNumber) || info.serialNumber;
+    const extra = [];
+    const pushIf = (dpc) => { if (collected.has(dpc)) extra.push({ label: PROPS[dpc].name, value: collected.get(dpc) }); };
+    // Identity
+    pushIf(DPC_EOS_Owner);
+    pushIf(DPC_EOS_Artist);
+    pushIf(DPC_EOS_Copyright);
+    pushIf(DPC_EOS_Nickname);
+    pushIf(DPC_EOS_LensName);
+    if (info.deviceVersion) extra.push({ label: "Firmware version", value: info.deviceVersion });
+    // Diagnostics
+    pushIf(DPC_EOS_AvailableShots);
+    pushIf(DPC_EOS_BatteryPower);
+    pushIf(DPC_EOS_TempStatus);
+    pushIf(DPC_EOS_LensStatus);
+    pushIf(DPC_EOS_ModelID);
+    pushIf(DPC_EOS_CameraTime);
+
+    return { model: info.model, serial, shutter, extra };
   } finally {
     // Best-effort CloseSession.
     try {
@@ -347,16 +492,15 @@ async function onConnect() {
     await state.device.claimInterface(state.ifaceNum);
 
     setStatus("Talking to camera…");
-    const res = await getShutterCount();
+    const res = await getCameraInfo();
 
     if (res.shutter == null) {
       setStatus("Connected, but shutter count not reported.", "warn");
       logLine("No PropValueChanged(0xD1ac) event was seen.", "l-warn");
-      showResult(res.model, res.serial, null);
     } else {
       setStatus("Done.", "ok");
-      showResult(res.model, res.serial, res.shutter);
     }
+    showResult(res.model, res.serial, res.shutter, res.extra);
   } catch (err) {
     logLine("ERROR: " + (err?.message || err), "l-err");
     if (err?.name === "NotFoundError") {
