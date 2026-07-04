@@ -522,8 +522,7 @@ $("connect").addEventListener("click", onConnect);
 
 // Hot-plug / disconnect handling.
 navigator.usb?.addEventListener("disconnect", () => {
-  setStatus("Device disconnected.", "warn");
-  elResult.classList.add("hidden");
+  setStatus("Device disconnected (last reading kept below).", "warn");
 });
 
 if (!("usb" in navigator)) {
