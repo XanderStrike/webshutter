@@ -529,3 +529,8 @@ if (!("usb" in navigator)) {
   setStatus("WebUSB not supported in this browser. Use Chrome / Edge.", "err");
   $("connect").disabled = true;
 }
+
+// Show the macOS-only caveat where relevant.
+if (/Mac/i.test(navigator.platform) || /Macintosh/i.test(navigator.userAgent)) {
+  $("macos-notice").hidden = false;
+}
