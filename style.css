@@ -97,23 +97,20 @@ button.primary:disabled { opacity: .5; cursor: default; }
 .cell .label { color: var(--muted); font-size: 12px; }
 .cell .value { font-variant-numeric: tabular-nums; word-break: break-word; }
 
-/* caveat / notes */
-.caveat { border-color: #4a3a1a; }
-.caveat h2 { color: var(--warn); }
-.caveat code, .notes code, .log-card code, footer code {
+/* notes */
+.notes code, .log-card code, footer code {
   background: var(--panel-2);
   padding: 1px 5px;
   border-radius: 4px;
   font-size: 13px;
 }
-.caveat pre, .log pre {
+.log pre {
   background: var(--panel-2);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 10px 12px;
   overflow-x: auto;
 }
-.caveat pre { margin: 6px 0; }
 ul { margin: 8px 0; padding-left: 20px; }
 li { margin-bottom: 4px; color: var(--muted); }
 

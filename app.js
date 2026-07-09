@@ -506,7 +506,7 @@ async function onConnect() {
     if (err?.name === "NotFoundError") {
       setStatus("No Canon device selected.", "err");
     } else if (err?.name === "SecurityError" || /claim|interface/i.test(err?.message || "")) {
-      setStatus("Could not claim the USB interface — PTPCamera likely holds it. See the note above.", "err");
+      setStatus("Could not claim the USB interface — another process may hold it.", "err");
     } else {
       setStatus("Failed: " + (err?.message || err), "err");
     }
@@ -528,9 +528,4 @@ navigator.usb?.addEventListener("disconnect", () => {
 if (!("usb" in navigator)) {
   setStatus("WebUSB not supported in this browser. Use Chrome / Edge.", "err");
   $("connect").disabled = true;
-}
-
-// Show the macOS-only caveat where relevant.
-if (/Mac/i.test(navigator.platform) || /Macintosh/i.test(navigator.userAgent)) {
-  $("macos-notice").hidden = false;
 }

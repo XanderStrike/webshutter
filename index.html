@@ -31,7 +31,7 @@
       <ul>
         <li>Requires a Chromium-based browser (Chrome / Edge / Opera) on any OS including Android.</li>
         <li>Camera must be in <strong>PTP</strong> communication mode.</li>
-        <li>Supported bodies are the same as the libgphoto2 <code>shuttercounter</code> property: 1D C, 1D X, 1D Mk IV, 7D/II, 5D II/III, 6D, 40D–70D, and the xxxD line.</li>
+        <li>Supported bodies: 1D C, 1D X, 1D Mk IV, 7D/II, 5D II/III, 6D, 40D–70D, and the xxxD line.</li>
         <li>Read-only. This only queries device properties, it changes nothing on the camera.</li>
       </ul>
     </section>
@@ -39,24 +39,6 @@
     <section class="card log-card">
       <h2>Protocol log</h2>
       <pre id="log" class="log"></pre>
-    </section>
-
-    <section id="macos-notice" class="card caveat" hidden>
-      <h2>⚠️ macOS notice</h2>
-      <p>
-        On macOS, when you plug in the camera, the system's
-        <code>PTPCamera</code> helper (used by Image Capture / Photos) may grab the
-        USB interface. A browser cannot take it away from another process, so
-        <strong>WebUSB will fail to claim the interface</strong> until
-        <code>PTPCamera</code> lets go.
-      </p>
-      <p>Workarounds:</p>
-      <ul>
-        <li>Quit Image Capture / Photos, then unplug &amp; replug the camera, <em>then</em> click Connect.</li>
-        <li>Or disable the auto-grab once (reversible):
-          <pre><code>defaults -currentHost write com.apple.ImageCapture disableHotPlug -bool true</code></pre>
-        </li>
-      </ul>
     </section>
 
     <footer>
